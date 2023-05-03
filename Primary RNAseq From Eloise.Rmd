@@ -1,0 +1,326 @@
+---
+title: "<center> OPLA POLA RNAseq analysis <center>"
+author: "<center> Eloise Cross <center><br>"
+date: "<center> _`r Sys.Date()`_ <center>"
+output:
+  pdf_document:
+    fig_caption: yes
+    toc: yes
+  html_document:
+    code_folding: hide
+    df_print: paged
+    theme: yeti
+    highlight: tango
+    toc: yes
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+
+library(rmarkdown)
+library(tinytex)
+library(knitr)
+library(reprex)
+library(tidyverse)
+library(edgeR)
+library(limma)
+library(FactoMineR)
+library(factoextra)
+library(cowplot)
+library(gt)
+library(DT)
+library(ggplot2)
+library(EnhancedVolcano)
+library(ggpubr)
+library(gplots)
+library(venn)
+library(GenomeInfoDbData)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(pathview)
+library(png)
+library(grid)
+library(dplyr)
+library(manipulateWidget)
+library(rgl)
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE, cache = TRUE)
+
+knitr::opts_knit$set(root.dir = "H:/2022/Primary/RNA SEQ") 
+knitr::opts_chunk$set(fig.path= 'figures/primary', echo=TRUE, warning = FALSE, message=FALSE, dev = 'png')
+
+```
+
+# Analysis methods 
+
+All analysis was conducted using [R](https://www.r-project.org/) and [RStudio](https://www.rstudio.com/). A variety of R packages were used for this analysis that are available from the Comprehensive R Archive Network (CRAN), Bioconductor.org, or Github. Differential gene expression analysis was carried our using the [EdgeR](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2796818/) package and functional enrichment analysis was carried out using clusterProfiler package. A full list of all packages used can be found at the bottom.
+
+***
+
+# Preprocessing
+
+## Impact of filtering and normalization
+
+``` {R Loading data}
+# Load data
+Raw_counts <- read.delim ('Counts.txt')
+samplemetadata <-read.csv ('Sample_info.csv')
+
+#group data
+group_fat <- factor(samplemetadata$fat_type)
+group_exp <-factor(samplemetadata$exp)
+#group_both <- factor(samplemetadata$fat_type samplemetadata$exp)
+
+# Turn raw count data into matrix with only relevant parts
+geneID <- Raw_counts$gene_name
+Raw_counts <- as.matrix(Raw_counts[,2:26])
+rownames(Raw_counts) <- geneID
+
+
+# Create a DGEList from raw count matrix
+myDGEList <- DGEList(Raw_counts, group = group_fat)#,id=group_exp)
+
+log2.cpm <- cpm(myDGEList, log=TRUE)
+
+
+log2.cpm.df <- as_tibble(log2.cpm, rownames = "geneID")
+log2.cpm.df.pivot <- pivot_longer(log2.cpm.df,
+                                  cols = EC1C:EC5P8, 
+                                  names_to = "samples",
+                                  values_to = "expression")
+
+ggplot(log2.cpm.df.pivot) +
+  aes(x=samples, y=expression, fill=samples) +
+  geom_violin(trim = FALSE, show.legend = FALSE) +
+  stat_summary(fun = "median", 
+               geom = "point", 
+               shape = 95, 
+               size = 10, 
+               color = "black", 
+               show.legend = FALSE) +
+  labs(y="log2 expression", x = "sample",
+       title="Log2 Counts per Million (CPM)",
+       subtitle="unfiltered, non-normalized") +
+  theme_bw() +
+   theme(axis.text.x = element_text(size = 7))
+```
+
+
+``` {R Filter and normalise data}
+
+# Filter data. NB this uses cpm but this will get calculated properly again later
+cpm <- cpm(myDGEList, log=FALSE)
+keep <- filterByExpr(cpm, group = group_fat)
+myDGEList.filtered <- myDGEList[keep,,keep.lib.sizes=FALSE]
+
+# Normalize filtered data using TMM method
+myDGEList.filtered.norm <- calcNormFactors(myDGEList.filtered, method = "TMM")
+
+# Express filtered and normalised data in log2(cpm)
+log2.cpm.filtered.norm <- cpm(myDGEList.filtered.norm, log=TRUE)
+
+# Also have it as a dataframe in case it comes in handy
+log2.cpm.filtered.norm.df <- as_tibble(log2.cpm.filtered.norm, rownames = "geneID")
+
+log2.cpm.filtered.norm.df.pivot <- pivot_longer(log2.cpm.filtered.norm.df, 
+                                                cols = EC1C:EC5P8, 
+                                                names_to = "samples", 
+                                                values_to = "expression")
+
+ggplot(log2.cpm.filtered.norm.df.pivot) +
+  aes(x=samples, y=expression, fill=samples) +
+  geom_violin(trim = FALSE, show.legend = FALSE) +
+  stat_summary(fun = "median", 
+               geom = "point", 
+               shape = 95, 
+               size = 10, 
+               color = "black", 
+               show.legend = FALSE) +
+  labs(y="log2 expression", x = "sample",
+       title="Log2 Counts per Million (CPM)",
+       subtitle="filtered, TMM normalized") +
+  theme_bw() +
+   theme(axis.text.x = element_text(size = 7))
+
+```
+
+Raw count data was first filtered to remove genes with low expression across the samples and then normalized using the [TMM method](https://genomebiology.biomedcentral.com/articles/10.1186/gb-2010-11-3-r25). Filtering reduced the number of genes from `r nrow(myDGEList)` to `r nrow(myDGEList.filtered)`. The output was then expressed as log2 counts per million (log2(cpm)). 
+
+
+
+
+
+## Table of filtered and normalized data
+
+``` {R Gene Expression Data}
+
+# Creating a log2cpm gene expression df with averages for each condition
+Avg.gene_expression <- log2.cpm.filtered.norm.df %>% 
+  mutate(Control = (EC1C + EC2C + EC3C + EC4C + EC5C)/5,
+         OPLA200 = (EC1O2 + EC2O2 + EC3O2 + EC4O2 + EC5O2)/5,
+         OPLA800 = (EC1O8 + EC2O8 + EC3O8 + EC4O8 + EC5O8)/5,
+         POLA200 = (EC1P2 + EC2P2 + EC3P2 + EC4P2 + EC5P2)/5,
+         POLA800 = (EC1P8 + EC2P8 + EC3P8 + EC4P8 + EC5P8)/5) %>% 
+    mutate_if(is.numeric, round, 2) %>%
+  dplyr::select(geneID, Control, OPLA200, OPLA800,POLA200,POLA800)
+
+datatable(Avg.gene_expression, 
+          extensions = c('KeyTable', "FixedHeader"), 
+          filter = 'top',
+          caption = 'Table 1: log2 CPM of filtered and normalised genes in Control, OPLA and POLA',
+          options = list(keys = TRUE, 
+                         searchHighlight = TRUE, 
+                         pageLength = 10, 
+                         lengthMenu = c("10", "25", "50", "100")))
+
+```
+
+
+``` {R PCA analysis and scree plot}
+#This is exactly the same as before, I just added the summary print out
+
+pca.res <- prcomp(t(log2.cpm.filtered.norm), scale.=F, retx=T)
+pc.var<-pca.res$sdev^2
+pc.per<-round(pc.var/sum(pc.var)*100, 1)
+
+screeplot(pca.res, type = "l", main = "Scree plot first 10 PCs")
+fviz_eig(pca.res, addlabels = TRUE, ylim = c(0,100))
+
+```
+
+
+
+***
+```{r, model}
+
+x<- myDGEList.filtered.norm
+
+design_just_fat <-model.matrix(~0+group, data = x$samples)
+
+#Adjust to account for paired factors
+
+subject <-factor(samplemetadata$exp)
+Treat <- factor(samplemetadata$fat_type, levels=c("Control","OPLA200","OPLA800", "POLA200", "POLA800"))
+
+design <- model.matrix(~subject+Treat)
+
+design
+
+y <- estimateDisp(x,design)
+
+#to look at the dispersion 
+
+y$common.dispersion
+ plotBCV(y)
+
+```
+
+```{r}
+
+fit <- glmQLFit(y, design)
+
+qlf_treatment_any <- glmQLFTest(fit, coef=6:9)
+topTags(qlf_treatment_any)
+
+#control versus any OPLA
+
+qlf_OPLA <- glmQLFTest(fit, contrast=c(0,0,0,0,0,0.5,0.5,0,0))
+topTags(qlf_OPLA)
+
+#control versus any POLA
+
+qlf_POLA <- glmQLFTest(fit, contrast=c(0,0,0,0,0,0,0,0.5,0.5))
+topTags(qlf_POLA)
+
+#control versus any low conc
+
+qlf_low_Conc <- glmQLFTest(fit, contrast=c(0,0,0,0,0,1,0,-1,0))
+topTags(qlf_low_Conc)
+
+#control versus any high conc
+
+qlf_high_Conc <- glmQLFTest(fit, contrast=c(0,0,0,0,0,0,1,0,-1))
+topTags(qlf_high_Conc)
+
+```
+
+
+
+```{r}
+
+results_anytreat <- topTags (qlf_treatment_any, sort.by = NULL, n=Inf, adjust.method = "BH")
+toptable_treat_any <- results_anytreat$table %>%
+  as_tibble(rownames = "geneID")
+
+
+#OPLA 
+results_opla <- topTags (qlf_OPLA, sort.by = NULL, n=Inf, adjust.method = "BH")
+toptable_OPLA <- results_opla$table %>%
+  as_tibble(rownames = "geneID")
+
+EnhancedVolcano(toptable_OPLA,
+    lab = toptable_OPLA$geneID,
+    x = 'logFC',
+    y = 'FDR',
+    legendPosition = "right",
+    legendLabSize = 12,
+    legendIconSize = 3,
+    labSize = 3,
+    subtitle = "OPLA vs Control",
+    pCutoff = 0.01, 
+    FCcutoff = 0.2)
+
+#POLA 
+results_pola <- topTags (qlf_POLA, sort.by = NULL, n=Inf, adjust.method = "BH")
+toptable_POLA <- results_pola$table %>%
+  as_tibble(rownames = "geneID")
+
+EnhancedVolcano(toptable_POLA,
+    lab = toptable_POLA$geneID,
+    x = 'logFC',
+    y = 'FDR',
+    legendPosition = "right",
+    legendLabSize = 12,
+    legendIconSize = 3,
+    labSize = 3,
+    subtitle = "POLA vs Control",
+    pCutoff = 0.01, 
+    FCcutoff = 0.2)
+
+#low 
+results_low <- topTags (qlf_low_Conc, sort.by = NULL, n=Inf, adjust.method = "BH")
+toptable_low <- results_low$table %>%
+  as_tibble(rownames = "geneID")
+
+EnhancedVolcano(toptable_low,
+    lab = toptable_low$geneID,
+    x = 'logFC',
+    y = 'FDR',
+    legendPosition = "right",
+    legendLabSize = 12,
+    legendIconSize = 3,
+    labSize = 3,
+    subtitle = "LOW OPLA vs LOW POLA",
+    pCutoff = 0.5, 
+    FCcutoff = 0.2)
+
+
+#high 
+results_high <- topTags (qlf_high_Conc, sort.by = NULL, n=Inf, adjust.method = "BH")
+toptable_high <- results_high$table %>%
+  as_tibble(rownames = "geneID")
+
+EnhancedVolcano(toptable_high,
+    lab = toptable_high$geneID,
+    x = 'logFC',
+    y = 'FDR',
+    legendPosition = "right",
+    legendLabSize = 12,
+    legendIconSize = 3,
+    labSize = 3,
+    subtitle = "high OPLA vs high POLA",
+    pCutoff = 0.5, 
+    FCcutoff = 0.2)
+```
