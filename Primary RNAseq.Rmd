@@ -27,6 +27,7 @@ library(clusterProfiler)
 library(pathview)
 library(ggsci)
 library(ggprism)
+library(Glimma)
 
 ```
 
@@ -37,6 +38,7 @@ samplemetadata <-read.csv ('Sample_info.csv')
 
 group_media <- factor(samplemetadata$media)
 group_exp <- factor(samplemetadata$exp)
+group_conc <- factor(samplemetadata$concentration)
 
 # Turn raw count data into matrix with only relevant parts
 geneID <- Raw_counts$gene_name
@@ -75,6 +77,7 @@ ggplot(log2.cpm.df.pivot) +
 
 # Filter data. NB this uses cpm but this will get calculated properly again later
 cpm <- cpm(myDGEList, log=FALSE)
+lcpm <- cpm(myDGEList, log=TRUE)
 keep <- filterByExpr(cpm, group = group_media)
 myDGEList.filtered <- myDGEList[keep,,keep.lib.sizes=FALSE]
 
@@ -131,6 +134,16 @@ datatable(Avg.gene_expression,
                          lengthMenu = c("10", "25", "50", "100")))
 
 ```
+
+```{R, Really cool PCA browser pop out}
+
+#myDGEList.filtered.norm$samples$round <- group_exp
+#myDGEList.filtered.norm$samples$conc <- group_conc
+
+#glMDSPlot(lcpm, labels=paste(group_media, group_exp, group_exp, sep="_"), groups=myDGEList.filtered.norm$samples[,c(1,4,5)], launch=TRUE)
+
+```
+
 
 ``` {R PCA analysis and scree plot}
 #This is exactly the same as before, I just added the summary print out
