@@ -1,4 +1,4 @@
-sample_name ,media,concentration,fat_type,exp
+sample_name ,media,conc,fat,exp
 Control_1,Control,None,Control,1
 OPLA200_1,OPLA200,Low,OPLA,1
 OPLA800_1,OPLA800,High,OPLA,1

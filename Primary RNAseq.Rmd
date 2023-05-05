@@ -36,9 +36,10 @@ library(Glimma)
 Raw_counts <- read.delim ('Counts.txt')
 samplemetadata <-read.csv ('Sample_info.csv')
 
-group_media <- factor(samplemetadata$media)
-group_exp <- factor(samplemetadata$exp)
-group_conc <- factor(samplemetadata$concentration)
+group <- factor(samplemetadata$media)
+exp <- factor(samplemetadata$exp)
+conc <- factor(samplemetadata$conc)
+fat <- factor(samplemetadata$fat)
 
 # Turn raw count data into matrix with only relevant parts
 geneID <- Raw_counts$gene_name
@@ -46,10 +47,10 @@ Raw_counts <- as.matrix(Raw_counts[,2:26])
 rownames(Raw_counts) <- geneID
 
 # Create a DGEList from raw count matrix
-myDGEList <- DGEList(Raw_counts, group = group_media)
+myDGEList <- DGEList(Raw_counts, group = group)
 
+cpm <- cpm(myDGEList, log=FALSE)
 log2.cpm <- cpm(myDGEList, log=TRUE)
-
 
 log2.cpm.df <- as_tibble(log2.cpm, rownames = "geneID")
 log2.cpm.df.pivot <- pivot_longer(log2.cpm.df,
@@ -76,9 +77,8 @@ ggplot(log2.cpm.df.pivot) +
 ``` {R Filter and normalise data}
 
 # Filter data. NB this uses cpm but this will get calculated properly again later
-cpm <- cpm(myDGEList, log=FALSE)
-lcpm <- cpm(myDGEList, log=TRUE)
-keep <- filterByExpr(cpm, group = group_media)
+
+keep <- filterByExpr(cpm, group = group)
 myDGEList.filtered <- myDGEList[keep,,keep.lib.sizes=FALSE]
 
 # Normalize filtered data using TMM method
@@ -137,10 +137,11 @@ datatable(Avg.gene_expression,
 
 ```{R, Really cool PCA browser pop out}
 
-#myDGEList.filtered.norm$samples$round <- group_exp
-#myDGEList.filtered.norm$samples$conc <- group_conc
+#myDGEList.filtered.norm$samples$exp <- exp
+#myDGEList.filtered.norm$samples$conc <- conc
+#myDGEList.filtered.norm$samples$fat <- fat
 
-#glMDSPlot(lcpm, labels=paste(group_media, group_exp, group_exp, sep="_"), groups=myDGEList.filtered.norm$samples[,c(1,4,5)], launch=TRUE)
+#glMDSPlot(log2.cpm.filtered.norm, labels=paste(exp, conc, fat, sep="_"), groups=myDGEList.filtered.norm$samples[,c(1,4,5,6)], launch=TRUE)
 
 ```
 
@@ -161,7 +162,7 @@ fviz_eig(pca.res, addlabels = TRUE, ylim = c(0,100))
 
 fviz_pca_ind(pca.res, geom.ind = "point", pointshape = 21, 
              pointsize = 2, 
-             fill.ind = group_exp,
+             fill.ind = exp,
              palette = "npg",
              col.ind = "black", 
              addEllipses = TRUE,
@@ -185,7 +186,7 @@ fviz_pca_ind(pca.res, geom.ind = "point", pointshape = 21,
 pca.res.df <- pca.res$x[,1:4] %>%
   as_tibble() %>%
   add_column(sample = samplemetadata$sample_name,
-             group = group_exp)
+             group = group)
   
 #Pivot the table to make it tidy and easier to facet graph
 
@@ -212,10 +213,63 @@ theme(axis.text.x = element_text(color = "black", size = 8, angle = 0, hjust = .
 
 ``` {R Differential Gene Expression Analysis!}
 
+#OK there's a lot here to explain so listen up
+
+#First of all we make a design matrix for the purposes of this we only care about the fixed effect of "group" variable which codes both fat conc and composition combined into one variable. The 0 at the front of the matrix model formula shows that we do not want an intercept because we want to compare all factors in group to each other and not just to control and it's a lot easier to code for this when there's no intercept (but otherwise makes no difference to the actual model as group is a factor). 
+
+design <- model.matrix(~0+group)
+colnames(design) <- gsub("group", "", colnames(design))
+design
+
+#We then make our contrast matrix which dictates all the contrasts we will be interested in, simple as that.
+contrasts <- makeContrasts(
+   HFvLF = (OPLA800 + POLA800) - (OPLA200 + POLA200),
+   HFvC = (OPLA800 + POLA800) - Control, 
+   LFvC = (OPLA200 + POLA200) - Control,
+   PvO = (POLA200 + POLA800) - (OPLA200 + OPLA800),
+   levels = colnames(design))
+rownames(contrasts) <- gsub("group", "", rownames(contrasts))
+contrasts
+
+# The modelling that Limma uses assumes the counts are normally distributed which they usually are not so this is us removing heteroscedascity from count data. voom function is usually used but here we use voomWithualityWeights because we know there's a huge amount of variability in our samples. It produces a "before" graphs to show just how poorly distributed they are.
+
+v <- voomWithQualityWeights(myDGEList.filtered.norm, design, plot=TRUE)
+
+#We're going to start creating a mixed effect model whereby "exp" is a random effects factor (ie a factor we don't care about but has an impact on the data) and "group" is the fixed effect factor. We begin by generating a correlation coefficient for duplicate measurements made on the same exp.
+
+cor <- duplicateCorrelation(v, design, block=exp)
+cor$consensus.correlation
+
+#We run the voom again as the correlation will change the weights slightly
+
+v <- voomWithQualityWeights(myDGEList.filtered.norm, design, plot = TRUE, block = exp, correlation = cor$consensus)
+
+#And hence we have to run the correlation again now the voom has changed (but it doesn't make much difference)
+
+cor <- duplicateCorrelation(v, design, block=exp)
+cor$consensus.correlation
+
+#Now we can actually make the model, and carry out the contrasts analysis as all coded. NB - we use a mixed model (exp = random effect factor) rather than linear model (exp = fixed effect factor) to save on degrees of freedom and give greater statistical power.
+
+vfit <- lmFit(object=v, design=design, 
+  block=exp, correlation=cor$consensus.correlation)
+vfit <- contrasts.fit(vfit, contrasts=contrasts)
+efit <- eBayes(vfit)
+plotSA(efit)
+
+# references: 
+# https://f1000research.com/articles/5-1408/v3#ref-14
+# https://bioconductor.org/packages/release/workflows/vignettes/RNAseq123/inst/doc/designmatrices.html section 7.6
+# https://www.bioconductor.org/packages/devel/bioc/vignettes/limma/inst/doc/usersguide.pdf section 18.1.9
+```
+
+```{R, Just put this here for now}
+
+
 # Pretty much all the same as before I just tidied this up quite a bit and put it all in one place for you
 
 # Design matrix - exactly the same as before
-design <- model.matrix(~0 + group)
+design <- model.matrix(~ 0 + media + exp)
 colnames(design) <- levels(group)
 
 # Contrast matrix - slight changes to before just to tidy up
