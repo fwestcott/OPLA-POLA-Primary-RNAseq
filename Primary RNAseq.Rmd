@@ -211,7 +211,7 @@ theme(axis.text.x = element_text(color = "black", size = 8, angle = 0, hjust = .
 
 ```
 
-``` {R Differential Gene Expression Analysis!}
+``` {R, Mixed Model}
 
 #OK there's a lot here to explain so listen up
 
@@ -223,10 +223,10 @@ design
 
 #We then make our contrast matrix which dictates all the contrasts we will be interested in, simple as that.
 contrasts <- makeContrasts(
-   HFvLF = (OPLA800 + POLA800) - (OPLA200 + POLA200),
-   HFvC = (OPLA800 + POLA800) - Control, 
-   LFvC = (OPLA200 + POLA200) - Control,
-   PvO = (POLA200 + POLA800) - (OPLA200 + OPLA800),
+   HFvLF = (OPLA800 + POLA800)/2 - (OPLA200 + POLA200)/2,
+   HFvC = (OPLA800 + POLA800)/2 - Control, 
+   LFvC = (OPLA200 + POLA200)/2 - Control,
+   PvO = (POLA200 + POLA800)/2 - (OPLA200 + OPLA800)/2,
    levels = colnames(design))
 rownames(contrasts) <- gsub("group", "", rownames(contrasts))
 contrasts
@@ -254,8 +254,42 @@ cor$consensus.correlation
 vfit <- lmFit(object=v, design=design, 
   block=exp, correlation=cor$consensus.correlation)
 vfit <- contrasts.fit(vfit, contrasts=contrasts)
-efit <- eBayes(vfit)
-plotSA(efit)
+efit1 <- eBayes(vfit)
+plotSA(efit1)
+
+# references: 
+# https://f1000research.com/articles/5-1408/v3#ref-14
+# https://bioconductor.org/packages/release/workflows/vignettes/RNAseq123/inst/doc/designmatrices.html section 7.6
+# https://www.bioconductor.org/packages/devel/bioc/vignettes/limma/inst/doc/usersguide.pdf section 18.1.9
+```
+``` {R, Linear Model}
+
+#This is a more standard linear model which treats exp as a factor rather than a random effect. The 0 at the front of the matrix model formula shows that we do not want an intercept because we want to compare all factors in group to each other and not just to control and it's a lot easier to code for this when there's no intercept (but otherwise makes no difference to the actual model as group is a factor). 
+
+design <- model.matrix(~0 + group + exp)
+colnames(design) <- gsub("group", "", colnames(design))
+design
+
+#We then make our contrast matrix which dictates all the contrasts we will be interested in, simple as that.
+contrasts <- makeContrasts(
+   HFvLF = (OPLA800 + POLA800)/2 - (OPLA200 + POLA200)/2,
+   HFvC = (OPLA800 + POLA800)/2 - Control, 
+   LFvC = (OPLA200 + POLA200)/2 - Control,
+   PvO = (POLA200 + POLA800)/2 - (OPLA200 + OPLA800)/2,
+   levels = colnames(design))
+rownames(contrasts) <- gsub("group", "", rownames(contrasts))
+contrasts
+
+# The modelling that Limma uses assumes the counts are normally distributed which they usually are not so this is us removing heteroscedascity from count data. voom function is usually used but here we use voomWithualityWeights because we know there's a huge amount of variability in our samples (ie some outliers). It produces a "before" graphs to show just how poorly distributed they are.
+
+v <- voomWithQualityWeights(myDGEList.filtered.norm, design, plot=TRUE)
+
+#Now we can actually make the model, and carry out the contrasts analysis as all coded.
+
+vfit <- lmFit(object=v, design=design)
+vfit <- contrasts.fit(vfit, contrasts=contrasts)
+efit2 <- eBayes(vfit)
+plotSA(efit2)
 
 # references: 
 # https://f1000research.com/articles/5-1408/v3#ref-14
@@ -263,85 +297,72 @@ plotSA(efit)
 # https://www.bioconductor.org/packages/devel/bioc/vignettes/limma/inst/doc/usersguide.pdf section 18.1.9
 ```
 
-```{R, Just put this here for now}
+```{R, Model comparison}
+#Mixed model
+dt1 <- decideTests(efit1)
 
+summary(dt1)
 
-# Pretty much all the same as before I just tidied this up quite a bit and put it all in one place for you
+#Linear model
+dt2 <- decideTests(efit2)
 
-# Design matrix - exactly the same as before
-design <- model.matrix(~ 0 + media + exp)
-colnames(design) <- levels(group)
+summary(dt2)
 
-# Contrast matrix - slight changes to before just to tidy up
-contrast.matrix1 <- makeContrasts(OPLAvsControl = OPLA-Control, levels=design)
-contrast.matrix2 <- makeContrasts(POLAvsControl = POLA-Control, levels=design)
-contrast.matrix3 <- makeContrasts(POLAvsOPLA = POLA-OPLA, levels=design)
-
-# Estimate common dispersion, trended dispersions and tagwise dispersions from filtered and normalized raw data (ie not cpm or log)
-y <- estimateDisp(myDGEList.filtered.norm, design, robust = TRUE)
-fit <- glmFit(y, design)
-
-# Likelihood ratio test OPLA vs Control. 
-res1 <- glmLRT(fit, contrast = contrast.matrix1)
-results1 <- topTags (res1, sort.by = NULL, n=Inf, adjust.method = "BH")
-toptable1 <- results1$table %>%
-  as_tibble(rownames = "geneID")
-
-# Likelihood ratio test POLA vs Control.
-res2 <- glmLRT(fit, contrast = contrast.matrix2)
-results2 <- topTags (res2, sort.by = NULL, n=Inf, adjust.method = "BH")
-toptable2 <- results2$table %>%
-  as_tibble(rownames = "geneID")
-
-# Likelihood ratio test POLA vs OPLA. 
-res3 <- glmLRT(fit, contrast = contrast.matrix3)
-results3 <- topTags (res3, sort.by = NULL, n=Inf, adjust.method = "BH")
-toptable3 <- results3$table %>%
-  as_tibble(rownames = "geneID")
-
-# NB: FDR column is adjusted p-value using BH correction for multiple comparisons
-
-DGEResults <- cbind(toptable1$geneID, toptable1$logFC, toptable2$logFC, toptable3$logFC, toptable1$FDR, toptable2$FDR, toptable3$FDR) %>%
-  as.data.frame() %>%
-  rename(geneID = V1, "OPLA vs Control LogFC" = V2, "POLA vs Control logFC" = V3, "POLA vs OPLA logFC" = V4, "OPLA vs Control p.adj" = V5, "POLA vs Control p.adj" = V6, "POLA vs OPLA p.adj" = V7)
-
-#gt(DGEResults)
 ```
 
-``` {R Volcano plots!!}
+```{R, Venn Diagrams and volcano plots!}
+
+vennDiagram(dt1[,2:3], circle.col=c("turquoise", "salmon"))
+
+HFvLF <- topTable(efit1, coef=1, n=Inf)
+HFvC <- topTable(efit1, coef=2, n=Inf)
+LFvC <- topTable(efit1, coef=3, n=Inf)
+PvO <- topTable(efit1, coef=4, n=Inf)
 
 # Almost exactly the same just all in one place and made to look better 
 
-EnhancedVolcano(toptable1,
-    lab = toptable1$geneID,
+EnhancedVolcano(HFvLF,
+    lab = HFvLF$ID,
     x = 'logFC',
-    y = 'FDR',
+    y = 'adj.P.Val',
     legendPosition = "right",
     legendLabSize = 12,
     legendIconSize = 3,
     labSize = 3,
-    subtitle = "OPLA vs Control",
+    subtitle = "HF vs LF",
     pCutoff = 0.01, 
     FCcutoff = 0.2)
 
 
-EnhancedVolcano(toptable2,
-    lab = toptable2$geneID,
+EnhancedVolcano(HFvC,
+    lab = HFvC$ID,
     x = 'logFC',
-    y = 'FDR',
+    y = 'adj.P.Val',
     legendPosition = "right",
     legendLabSize = 12,
     legendIconSize = 3,
     labSize = 3,
-    subtitle = "POLA vs Control",
+    subtitle = "HF vs C",
     pCutoff = 0.01, 
     FCcutoff = 0.2)
 
 
-EnhancedVolcano(toptable3,
-    lab = toptable3$geneID,
+EnhancedVolcano(LFvC,
+    lab = LFvC$ID,
     x = 'logFC',
-    y = 'FDR',
+    y = 'adj.P.Val',
+    legendPosition = "right",
+    legendLabSize = 12,
+    legendIconSize = 3,
+    labSize = 3,
+    subtitle = "LF vs C",
+    pCutoff = 0.01, 
+    FCcutoff = 0.2)
+
+EnhancedVolcano(PvO,
+    lab = PvO$ID,
+    x = 'logFC',
+    y = 'adj.P.Val',
     legendPosition = "right",
     legendLabSize = 12,
     legendIconSize = 3,
@@ -349,7 +370,12 @@ EnhancedVolcano(toptable3,
     subtitle = "POLA vs OPLA",
     pCutoff = 0.01, 
     FCcutoff = 0.2)
+
 ```
+
+
+
+
 
 ``` {R Table of differentially expressed genes, log2cpm}
 # Decide tests go through the results of the differential gene expression analysis and catagorizes each gene into either significant up, down-regulation or no significnat change (1,-1 and 0 respectively). IMPORTANT - p.value and lfc are obviously the p-value and lfc cutoff for if genes are classed as differentially expressed. These can and probably should be changed and will have an impact on the results from here on. Currently set to same parameters as the volcano plots are.  
