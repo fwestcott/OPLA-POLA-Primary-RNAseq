@@ -291,6 +291,7 @@ vfit <- contrasts.fit(vfit, contrasts=contrasts)
 efit2 <- eBayes(vfit)
 plotSA(efit2)
 
+
 # references: 
 # https://f1000research.com/articles/5-1408/v3#ref-14
 # https://bioconductor.org/packages/release/workflows/vignettes/RNAseq123/inst/doc/designmatrices.html section 7.6
@@ -300,7 +301,6 @@ plotSA(efit2)
 ```{R, Model comparison}
 #Mixed model
 dt1 <- decideTests(efit1)
-
 summary(dt1)
 
 #Linear model
@@ -371,32 +371,20 @@ EnhancedVolcano(PvO,
     pCutoff = 0.01, 
     FCcutoff = 0.2)
 
+#Interactive volcano plot for HF v LF (change the columns of the data frames to make it for other comparisons)
+#glXYPlot(x=efit1$coef[,1], y=efit1$lod[,1], xlab="logFC", ylab="logP", status=dt1[,1], counts=log2.cpm.filtered.norm, groups=group, launch = TRUE, sample.cols=group)
+
+
 ```
 
+``` {R, Table of differential gene expression}
 
+dt1 <- as.data.frame(dt1)
 
-
-
-``` {R Table of differentially expressed genes, log2cpm}
-# Decide tests go through the results of the differential gene expression analysis and catagorizes each gene into either significant up, down-regulation or no significnat change (1,-1 and 0 respectively). IMPORTANT - p.value and lfc are obviously the p-value and lfc cutoff for if genes are classed as differentially expressed. These can and probably should be changed and will have an impact on the results from here on. Currently set to same parameters as the volcano plots are.  
-
-Decision_results1 <- decideTests(res1, method="global", adjust.method="BH", p.value=0.05, lfc = 0.2)
-Decision_results2 <- decideTests(res2, method="global", adjust.method="BH", p.value=0.05, lfc = 0.2)
-Decision_results3 <- decideTests(res3, method="global", adjust.method="BH", p.value=0.05, lfc = 0.2)
-
-# I've combined the results of these three combine tests to have a column for each comparison 
-Decision_results <- as_tibble(cbind(Decision_results1, Decision_results2, Decision_results3), rownames = "geneID")
-
-# Here I've taken our average gene expression df we made and ask it to keep all the genes with a significant lfc as decided by the results of our decision tests
-diffGenes.avg <- Avg.gene_expression[Decision_results[,2] !=0 | Decision_results[,3] !=0 | Decision_results[,4] !=0,]
-diffGenes.avg.df <- as_tibble(diffGenes.avg)
-
-# Created interactive and searchable table of all the significantly differentially expressed genes
-datatable(diffGenes.avg.df, 
+datatable(dt1, 
           extensions = c('KeyTable', "FixedHeader"), 
           caption = 'Table 2: log2 CPM of DEGs in Control, OPLA and POLA',
-          options = list(keys = TRUE, searchHighlight = TRUE, pageLength = 10, lengthMenu = c("10", "25", "50", "100"))) %>%
-  formatRound(columns=c(2:4), digits=2)
+          options = list(keys = TRUE, searchHighlight = TRUE, pageLength = 10, lengthMenu = c("10", "25", "50", "100")))
 
 ```
 
