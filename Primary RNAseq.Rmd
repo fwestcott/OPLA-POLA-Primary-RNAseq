@@ -428,46 +428,44 @@ heatmap.2(selected_genes, scale="row",
 
 ```
 
-``` {R OPLA function enrichment analysis}
+``` {R HFvLF function enrichment analysis}
 
 diffGenes.HFvLF <- rownames(filter(dt1, dt1$HFvLF != 0))
 
-HFvLF <- as.data.frame(HFvLF) 
+diffGenes.HFvLF <- HFvLF[HFvLF$ID %in% diffGenes.HFvLF, ] %>%
+rename("SYMBOL" = ID)
 
-diffGenes.HFvLF <- HFvLF[diffGenes.HFvLF,] #%>%
-#rename("SYMBOL" = ID)
-
-entrez <- bitr(diffGenes.OPLA$SYMBOL, fromType = "SYMBOL",
+entrez <- bitr(diffGenes.HFvLF$SYMBOL, fromType = "SYMBOL",
                  toType = "ENTREZID",
                  OrgDb="org.Hs.eg.db")
 
-deg_opla_enrich <- diffGenes.OPLA %>% left_join(entrez,.,by="SYMBOL")
+deg_HFvLF_enrich <- diffGenes.HFvLF %>% left_join(entrez,.,by="SYMBOL")
 
-opla_kegg_gene_list <- deg_opla_enrich$logFC
+HFvLF_kegg_gene_list <- deg_HFvLF_enrich$logFC
 
-names(opla_kegg_gene_list) <- deg_opla_enrich$ENTREZID
+names(HFvLF_kegg_gene_list) <- deg_HFvLF_enrich$ENTREZID
 
-opla_kegg_gene_list<-na.omit(opla_kegg_gene_list)
+HFvLF_kegg_gene_list<-na.omit(HFvLF_kegg_gene_list)
 
-opla_kegg_gene_list = sort(opla_kegg_gene_list, decreasing = TRUE)
+HFvLF_kegg_gene_list = sort(HFvLF_kegg_gene_list, decreasing = TRUE)
 
-opla_kk <- gseKEGG(geneList     = opla_kegg_gene_list,
+HFvLF_kk <- gseKEGG(geneList     = HFvLF_kegg_gene_list,
                organism     = "hsa")
 
-dotplot(opla_kk, showCategory = 3, title = "OPLA Enriched Pathways vs Control" , split=".sign") + facet_grid(.~.sign)
-  ggsave("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Outputs/Transfer-report/figures/OPLA GSEA.png")
+dotplot(HFvLF_kk, showCategory = 5, title = "HFvLF Enriched Pathways vs Control" , split=".sign") + facet_grid(.~.sign)
+ # ggsave("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/HFvLF GSEA.png")
 ```
 
 
-``` {R OPLA pathway enrichment, warning=FALSE}
-setwd("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-huh7-RNAseq/Pathview")
+``` {R HFvLF pathway enrichment, warning=FALSE}
+setwd("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/Pathview")
 
 #This is the same as before
-fc.vector <- as.numeric(deg_opla_enrich[, 3])
-names(fc.vector) <- (deg_opla_enrich[, 2])
+fc.vector <- as.numeric(deg_HFvLF_enrich[, 3])
+names(fc.vector) <- (deg_HFvLF_enrich[, 2])
 de.names <- names(fc.vector)
 
-pathview(gene.data  = fc.vector, pathway.id = "hsa04142",species  = "hsa")
+pathview(gene.data  = fc.vector, pathway.id = "hsa04140",species  = "hsa")
 
 ```
 
