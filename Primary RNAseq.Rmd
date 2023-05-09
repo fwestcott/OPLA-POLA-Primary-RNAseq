@@ -383,109 +383,46 @@ dt1 <- as.data.frame(dt1)
 
 datatable(dt1, 
           extensions = c('KeyTable', "FixedHeader"), 
-          caption = 'Table 2: log2 CPM of DEGs in Control, OPLA and POLA',
           options = list(keys = TRUE, searchHighlight = TRUE, pageLength = 10, lengthMenu = c("10", "25", "50", "100")))
 
 ```
 
 ``` {R Graph Individual Genes}
+
 # Pivot to tidy up data
-diffGenes.avg.df.pivot <- pivot_longer(diffGenes.avg.df, 
-                          cols = Control : POLA, 
-                          names_to = "fat type", 
-                          values_to = "log2(cpm)")
+Avg.gene_expression.pivot <- pivot_longer(Avg.gene_expression, 
+                          cols = Control : POLA800, 
+                          names_to = "group", 
+                          values_to = "lcpm")
 
 #  Filter for genes you want. grepl will pick out any with that phrase in it. Use " x|y|z|etc." notation to search for multiple genes. 
-graph <- diffGenes.avg.df.pivot %>%
+graph <- Avg.gene_expression.pivot %>%
   dplyr::filter(grepl('AKR1D1|AKR1C4|SRD5A1|SRD5A2|11BHSD1', geneID))
 
 # Graph error bars were a step too far for me as they got messed up with the facet wrap
-ggbarplot(graph, "fat type", "log2(cpm)", add = "mean_se", palette = "npg", legend = "none", fill = "fat type", xlab = "Media", ylab = "counts per million (log2)") +
-  facet_wrap(~geneID) +
-  scale_y_continuous(expand = c(0,0), limits = c(0, 12)) +
-theme(axis.text.x = element_text(color = "grey20", size = 12),
-axis.text.y = element_text(color = "grey20", size = 12),
-axis.title.x = element_text(color = "grey20", size = 16),
-axis.title.y = element_text(color = "grey20", size = 16))
+ggbarplot(graph, "group", "lcpm", add = "mean_se", palette = "npg", legend = "none", fill = "group", xlab = "Media", ylab = "counts per million (log2)") +
+  facet_wrap(~geneID) + theme_prism(base_size = 14) +
+  theme(legend.position = "none", legend.title = element_text()) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 1)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.22)))
 #ggsave('C:/Users/fwestcott/OneDrive - Nexus365/Desktop/RNAseq Graph2.png')
 
 ```
 
-``` {R Venn Diagram}
-#This is exactly the same as before I have just used the decision results from earlier to filter for up and down regulated genes instead of doing it manually
-
-venn_opla_up <- toptable1[Decision_results[,2] >0,]
-venn_opla_down <- toptable1[Decision_results[,2] <0,]
-venn_pola_up <- toptable2[Decision_results[,3] >0,]
-venn_pola_down <- toptable2[Decision_results[,3] <0,]
-
-venn_up <-merge(venn_opla_up,venn_pola_up, by= "geneID", all.x=TRUE, all.y=TRUE)
-
-OPLA_up <- venn_up[!is.na(venn_up$logFC.x), "geneID"]
-POLA_up <- venn_up[!is.na(venn_up$logFC.y), "geneID"]
-input_up <-list("Upregulated in OPLA"=OPLA_up, "Upregulated in POLA"=POLA_up)
-venn(input_up)
-
-
-venn_down <-merge(venn_opla_down,venn_pola_down, by= "geneID", all.x=TRUE, all.y=TRUE)
-
-OPLA_down <- venn_down[!is.na(venn_down$logFC.x), "geneID"]
-POLA_down <- venn_down[!is.na(venn_down$logFC.y), "geneID"]
-input_down <-list("Downregulated in OPLA"=OPLA_down, "Downregulated in POLA"=POLA_down)
-venn(input_down)
-
-```
-
-
-``` {R Clustering}
-# I'm again using that big Decision results table to filter out all non-significant differential expressed genes from our log2cpm data
-diffGenes <- log2.cpm.filtered.norm.df[Decision_results[,2] !=0 | Decision_results[,3] !=0 | Decision_results[,4] !=0,] %>% 
-  column_to_rownames(var="geneID") %>%
-  as.matrix
-
-# This is just stuff for the dendrogram to do clustering. Trust me, I copied it off the internet.
-clustRows <- hclust(as.dist(1-cor(t(diffGenes), method="pearson")), method="complete")
-clustColumns <- hclust(as.dist(1-cor(diffGenes, method="spearman")), method="complete")
-
-# Change K = it you want to cluster you genes into more than two (change it and you'll see what I mean)
-module.assign <- cutree(clustRows, k=2)
-
-# Boring code just to get the little colour bar by the side of the genes
-module.color <- rainbow(length(unique(module.assign)), start=0.1, end=0.9) 
-module.color <- module.color[as.vector(module.assign)]
-
-# Actual heatmap
-heatmap.2(diffGenes, 
-          Rowv=as.dendrogram(clustRows), 
-          Colv=as.dendrogram(clustColumns),
-          RowSideColors=module.color,
-          scale='row', labRow=NA,
-          density.info="none", trace="none",  
-          cexRow=1, cexCol=1, margins=c(8,20)) 
-
-```
-
 ``` {R Heatmap of selected genes}
-# Change whatever is in the filter function to change which genes are plotted
-selected_genes <- diffGenes %>%
-  as_tibble(rownames = "geneID") %>%
-dplyr::filter(grepl('TRBC1|IL17RC|CDHR5|ALDOA|CLDN3|IGKV1OR2‐108|CHI3L1|EMILIN1|SCD|JUND|MYOT|BTRC|PDE4DIP|GART|RPGRIP1L|EEA1|GRIK2|TLX3|IGF2BP3|GTSE1',geneID))%>%
+
+# Change whatever is in the filter function to change which genes are plotted. use the form 'gene1|gene2' etc.
+selected_genes <- Avg.gene_expression %>%
+dplyr::filter(grepl('ATG',geneID))%>%
  column_to_rownames(var="geneID") %>%
   as.matrix
 
-#TRBC1|IL17RC|CDHR5|ALDOA|CLDN3|IGKV1OR2‐108|CHI3L1|EMILIN1|SCD|JUND
+#png(filename = "C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-RNAseq/ATG heatmap.png", width = 800, height = 800, units = "px", pointsize = 17, bg = "white")
 
-#png(filename = "C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Outputs/Transfer-report/figures/ATG heatmap.png", width = 800, height = 800, units = "px", pointsize = 17, bg = "white")
-
-# I stripped this one down a lot because otherwise was a bit OTT
-heatmap.2(selected_genes, 
-          Rowv= NULL, 
-          Colv=NULL,
-          dendrogram = 'none',
-          scale='row',
-          density.info="none", trace="none",  
-          cexRow= 1.4, cexCol=0.9, margins=c(1,20)
-          )
+heatmap.2(selected_genes, scale="row",
+   labRow=rownames(selected_genes), labCol=group,
+   trace="none", density.info="none", 
+   margin=c(5,6), lhei=c(2,10), dendrogram="column")
 
 #dev.off()
 
@@ -493,8 +430,12 @@ heatmap.2(selected_genes,
 
 ``` {R OPLA function enrichment analysis}
 
-diffGenes.OPLA <- toptable1[Decision_results[,2] !=0,] %>%
-rename("SYMBOL" = geneID)
+diffGenes.HFvLF <- rownames(filter(dt1, dt1$HFvLF != 0))
+
+HFvLF <- as.data.frame(HFvLF) 
+
+diffGenes.HFvLF <- HFvLF[diffGenes.HFvLF,] #%>%
+#rename("SYMBOL" = ID)
 
 entrez <- bitr(diffGenes.OPLA$SYMBOL, fromType = "SYMBOL",
                  toType = "ENTREZID",
