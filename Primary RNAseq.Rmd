@@ -431,7 +431,7 @@ heatmap.2(selected_genes, scale="row",
 #dev.off()
 
 ```
-```{R, New GSEA}
+```{R, HFvLF Functional enrichment analysis}
 
 diffGenes.HFvLF <- rownames(filter(dt1, dt1$HFvLF != 0))
 
@@ -469,11 +469,6 @@ ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
        title="Hallmark pathways NES from GSEA") + 
   theme_minimal()
 
-```
-
-
-``` {R HFvLF function enrichment analysis}
-
 diffGenes.HFvLF <- rownames(filter(dt1, dt1$HFvLF != 0))
 
 diffGenes.HFvLF <- HFvLF[HFvLF$ID %in% diffGenes.HFvLF, ] %>%
@@ -507,14 +502,49 @@ setwd("C:/Users/fwestcott/OneDrive - Nexus365/Desktop/Results/OPLA-POLA-Primary-
 #This is the same as before
 fc.vector <- as.numeric(deg_HFvLF_enrich[, 3])
 names(fc.vector) <- (deg_HFvLF_enrich[, 2])
-de.names <- names(fc.vector)
+de.names <- names(fc.vector) 
 
-pathview(gene.data  = fc.vector, pathway.id = "hsa04932",species  = "hsa")
+pathview(gene.data  = fc.vector, pathway.id = "hsa05204",species  = "hsa")
 
 ```
 
 ``` {R LFvC function enrichment analysis}
+#MSigDb Hallmarks
+diffGenes.LFvC <- rownames(filter(dt1, dt1$LFvC != 0))
 
+diffGenes.LFvC <- LFvC[LFvC$ID %in% diffGenes.LFvC, ] %>%
+rename("SYMBOL" = ID)
+
+diffGenes.LFvC <- diffGenes.LFvC %>% 
+    dplyr::select(SYMBOL, t) %>% 
+    na.omit() %>% 
+    distinct() %>% 
+    group_by(SYMBOL) %>% 
+    summarize(stat=mean(t))
+
+ranks <- deframe(diffGenes.LFvC)
+
+pathways.hallmark <- gmtPathways("h.all.v2023.1.Hs.symbols.gmt")
+
+fgseaRes <- fgsea(pathways=pathways.hallmark, stats=ranks, nperm=1000)
+
+fgseaResTidy <- fgseaRes %>%
+  as_tibble() %>%
+  arrange(desc(NES))
+
+fgseaResTidy %>% 
+  dplyr::select(-leadingEdge, -ES, -nMoreExtreme) %>% 
+  arrange(padj) %>% 
+  DT::datatable()
+
+ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
+  geom_col(aes(fill=padj<0.05)) +
+  coord_flip() +
+  labs(x="Pathway", y="Normalized Enrichment Score",
+       title="Hallmark pathways NES from GSEA") + 
+  theme_minimal()
+
+#Kegg
 diffGenes.LFvC <- rownames(filter(dt1, dt1$LFvC != 0))
 
 diffGenes.LFvC <- LFvC[LFvC$ID %in% diffGenes.LFvC, ] %>%
@@ -556,7 +586,44 @@ pathview(gene.data  = fc.vector, pathway.id = "hsa04932",species  = "hsa")
 
 
 ``` {R HFvC function enrichment analysis}
+#MSigDb Hallmarks
+diffGenes.HFvC <- rownames(filter(dt1, dt1$HFvC != 0))
 
+diffGenes.HFvC <- HFvC[HFvC$ID %in% diffGenes.HFvC, ] %>%
+rename("SYMBOL" = ID)
+
+diffGenes.HFvC <- diffGenes.HFvC %>% 
+    dplyr::select(SYMBOL, t) %>% 
+    na.omit() %>% 
+    distinct() %>% 
+    group_by(SYMBOL) %>% 
+    summarize(stat=mean(t))
+
+ranks <- deframe(diffGenes.HFvC)
+
+# Load the pathways into a named list
+pathways.hallmark <- gmtPathways("h.all.v2023.1.Hs.symbols.gmt")
+
+fgseaRes <- fgsea(pathways=pathways.hallmark, stats=ranks, nperm=1000)
+
+fgseaResTidy <- fgseaRes %>%
+  as_tibble() %>%
+  arrange(desc(NES))
+
+# Show in a nice table:
+fgseaResTidy %>% 
+  dplyr::select(-leadingEdge, -ES, -nMoreExtreme) %>% 
+  arrange(padj) %>% 
+  DT::datatable()
+
+ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
+  geom_col(aes(fill=padj<0.05)) +
+  coord_flip() +
+  labs(x="Pathway", y="Normalized Enrichment Score",
+       title="Hallmark pathways NES from GSEA") + 
+  theme_minimal()
+
+#Kegg
 diffGenes.HFvC <- rownames(filter(dt1, dt1$HFvC != 0))
 
 diffGenes.HFvC <- HFvC[HFvC$ID %in% diffGenes.HFvC, ] %>%
@@ -597,7 +664,44 @@ pathview(gene.data  = fc.vector, pathway.id = "hsa04932",species  = "hsa")
 ```
 
 ``` {R PvO function enrichment analysis}
+#MSigDb
+diffGenes.PvO <- rownames(filter(dt1, dt1$PvO != 0))
 
+diffGenes.PvO <- PvO[PvO$ID %in% diffGenes.PvO, ] %>%
+rename("SYMBOL" = ID)
+
+diffGenes.PvO <- diffGenes.PvO %>% 
+    dplyr::select(SYMBOL, t) %>% 
+    na.omit() %>% 
+    distinct() %>% 
+    group_by(SYMBOL) %>% 
+    summarize(stat=mean(t))
+
+ranks <- deframe(diffGenes.PvO)
+
+# Load the pathways into a named list
+pathways.hallmark <- gmtPathways("h.all.v2023.1.Hs.symbols.gmt")
+
+fgseaRes <- fgsea(pathways=pathways.hallmark, stats=ranks, nperm=1000)
+
+fgseaResTidy <- fgseaRes %>%
+  as_tibble() %>%
+  arrange(desc(NES))
+
+# Show in a nice table:
+fgseaResTidy %>% 
+  dplyr::select(-leadingEdge, -ES, -nMoreExtreme) %>% 
+  arrange(padj) %>% 
+  DT::datatable()
+
+ggplot(fgseaResTidy, aes(reorder(pathway, NES), NES)) +
+  geom_col(aes(fill=padj<0.05)) +
+  coord_flip() +
+  labs(x="Pathway", y="Normalized Enrichment Score",
+       title="Hallmark pathways NES from GSEA") + 
+  theme_minimal()
+
+#Kegg 
 diffGenes.PvO <- rownames(filter(dt1, dt1$PvO != 0))
 
 diffGenes.PvO <- PvO[PvO$ID %in% diffGenes.PvO, ] %>%
@@ -633,6 +737,6 @@ fc.vector <- as.numeric(deg_PvO_enrich[, 3])
 names(fc.vector) <- (deg_PvO_enrich[, 2])
 de.names <- names(fc.vector)
 
-pathview(gene.data  = fc.vector, pathway.id = "hsa04668",species  = "hsa")
+pathview(gene.data  = fc.vector, pathway.id = "hsa04932",species  = "hsa")
 
 ```
